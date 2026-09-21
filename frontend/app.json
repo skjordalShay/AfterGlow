@@ -17,7 +17,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#342744"
+        "backgroundColor": "#2C3157"
       },
       "package": "com.afterglow.app",
       "versionCode": 1,
@@ -36,7 +36,15 @@
           "image": "./assets/images/splash-image.png",
           "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#342744"
+          "backgroundColor": "#2C3157"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Add a warm profile photo to your account",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-font",

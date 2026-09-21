@@ -101,3 +101,8 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## Iteration 2 — main agent notes (June 2026)
+Implemented: (1) profile photo upload via Emergent Object Storage (`POST /api/profile/photo`, `GET /api/files/{path}`),
+(2) Stripe $5.99/mo subscription (`POST /api/premium/checkout`, `GET /api/premium/status`, `GET /api/premium/confirm`,
+routes `/premium`, `/premium-success`, `/premium-cancel`), (3) daily prompt (`GET /api/prompts/today`, Discover card +
+chat chip), (4) store icon/splash/welcome artwork. All 4 need testing. Credentials in /app/memory/test_credentials.md.

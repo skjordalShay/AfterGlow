@@ -12,8 +12,41 @@ export type User = {
   zip_code?: string | null;
   about?: string | null;
   photo_url?: string | null;
+  is_premium?: boolean;
   created_at: string;
 };
+
+export const API_BASE = API;
+
+/** Profile photos are stored as `/api/files/...` — resolve them to a full URL. */
+export function photoUri(url?: string | null): string | null {
+  if (!url) return null;
+  return url.startsWith("/") ? `${API}${url}` : url;
+}
+
+export async function uploadProfilePhoto(
+  uri: string,
+  fileName: string,
+  mimeType: string,
+): Promise<User> {
+  const form = new FormData();
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(uri)).blob();
+    form.append("file", blob, fileName);
+  } else {
+    form.append("file", { uri, name: fileName, type: mimeType } as any);
+  }
+  const t = await getToken();
+  const r = await fetch(`${API}/api/profile/photo`, {
+    method: "POST",
+    headers: t ? { Authorization: `Bearer ${t}` } : {},
+    body: form,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail ?? "Could not upload photo");
+  await saveUser(data);
+  return data as User;
+}
 
 async function saveToken(t: string) {
   if (Platform.OS === "web") localStorage.setItem(KEY, t);

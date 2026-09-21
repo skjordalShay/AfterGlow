@@ -6,8 +6,12 @@ from pathlib import Path
 from typing import Annotated, Optional, List
 
 import jwt
+import requests
+import stripe
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, APIRouter, status
+from fastapi import Depends, FastAPI, HTTPException, APIRouter, status, UploadFile, File, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
@@ -32,15 +36,121 @@ db = client[DB_NAME]
 passwords = PasswordHash.recommended()
 bearer = HTTPBearer(auto_error=False)
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ---------- Emergent Object Storage (profile photos) ----------
+
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "the-afterglow"
+MAX_PHOTO_BYTES = 6 * 1024 * 1024
+ALLOWED_PHOTO_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic"}
+_storage_key: Optional[str] = None
+
+
+def init_storage() -> str:
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp.raise_for_status()
+    _storage_key = resp.json()["storage_key"]
+    return _storage_key
+
+
+def _storage_call(method: str, path: str, **kwargs) -> requests.Response:
+    global _storage_key
+    resp = requests.request(method, f"{STORAGE_URL}/objects/{path}",
+                            headers={"X-Storage-Key": init_storage(), **kwargs.pop("headers", {})},
+                            **kwargs)
+    if resp.status_code == 503:  # stale key — re-init once
+        _storage_key = None
+        resp = requests.request(method, f"{STORAGE_URL}/objects/{path}",
+                                headers={"X-Storage-Key": init_storage(), **kwargs.pop("headers", {})},
+                                **kwargs)
+    return resp
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    resp = _storage_call("PUT", path, headers={"Content-Type": content_type}, data=data, timeout=120)
+    if resp.status_code == 402:
+        raise HTTPException(402, "Photo storage is temporarily unavailable. Please try again later.")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str) -> tuple[bytes, str]:
+    resp = _storage_call("GET", path, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+# ---------- Stripe (Premium subscription) ----------
+
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+PREMIUM_PRICE_CENTS = 599
+stripe.api_key = STRIPE_API_KEY
+if "sk_test_emergent" in STRIPE_API_KEY:
+    stripe.api_base = STORAGE_BASE.rstrip("/") + "/stripe"
+
+
+# ---------- Daily gentle prompts ----------
+
+DAILY_PROMPTS = [
+    "What is a small kindness someone showed you this week?",
+    "Which song always brings back a warm memory for you?",
+    "What did your kitchen smell like on a Sunday when you were young?",
+    "Is there a place you would love to visit again, just once more?",
+    "What is something you have learned about yourself this past year?",
+    "Who taught you the most about patience?",
+    "What is a simple pleasure you still look forward to?",
+    "What was your favourite way to spend a summer evening?",
+    "Is there a book or film you could happily revisit forever?",
+    "What is a tradition you would like to keep alive?",
+    "What is the best piece of advice you were ever given?",
+    "What made you laugh recently, even a little?",
+    "Which season feels most like home to you, and why?",
+    "What is something you are quietly proud of?",
+    "What did you want to be when you were ten years old?",
+    "Is there a meal you would love to share with someone again?",
+    "What is a hobby you have always wanted to try?",
+    "What does a truly restful day look like for you?",
+    "Who in your life has always been able to make you feel calm?",
+    "What is one thing about today that you are grateful for?",
+    "What is a smell that instantly takes you back in time?",
+    "If you could give your younger self one gentle word, what would it be?",
+    "What is a story your family loves to retell?",
+    "What is something beautiful you noticed this week?",
+    "Which friend from long ago do you still think about?",
+    "What is a skill you are glad you learned?",
+    "What was the first concert, show, or dance you ever went to?",
+    "What helps you feel steady on a difficult day?",
+    "What is a place in your town that holds a memory for you?",
+    "What would a perfect quiet morning include?",
+    "Is there a garden, tree, or view you have loved for years?",
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.users.create_index([("email", ASCENDING)], unique=True)
     await db.waves.create_index([("from_id", ASCENDING), ("to_id", ASCENDING)])
     await db.messages.create_index([("conversation_id", ASCENDING), ("created_at", ASCENDING)])
+    await db.photos.create_index([("path", ASCENDING)], unique=True)
+    await db.payment_transactions.create_index([("session_id", ASCENDING)], unique=True)
     # Seed default gatherings if none exist
     if await db.gatherings.count_documents({}) == 0:
         await db.gatherings.insert_many(_default_gatherings())
+    try:
+        await run_in_threadpool(init_storage)
+    except Exception as e:  # storage is optional at boot; uploads re-init lazily
+        logger.warning("Object storage init failed: %s", e)
     yield
     client.close()
 
@@ -76,7 +186,28 @@ class PublicUser(BaseModel):
     zip_code: Optional[str] = None
     about: Optional[str] = None
     photo_url: Optional[str] = None
+    is_premium: bool = False
     created_at: datetime
+
+
+class CheckoutIn(BaseModel):
+    origin_url: str = Field(min_length=8, max_length=300)
+
+
+class CheckoutOut(BaseModel):
+    url: str
+    session_id: str
+
+
+class PremiumStatus(BaseModel):
+    is_premium: bool
+    payment_status: Optional[str] = None
+    session_status: Optional[str] = None
+
+
+class DailyPrompt(BaseModel):
+    date: str
+    prompt: str
 
 
 class AuthOut(BaseModel):
@@ -91,6 +222,7 @@ class MemberCard(BaseModel):
     zip_code: Optional[str] = None
     about: Optional[str] = None
     photo_url: Optional[str] = None
+    is_premium: bool = False
 
 
 class WaveOut(BaseModel):
@@ -169,6 +301,7 @@ def _public_user(doc: dict) -> PublicUser:
         zip_code=doc.get("zip_code"),
         about=doc.get("about"),
         photo_url=doc.get("photo_url"),
+        is_premium=bool(doc.get("is_premium", False)),
         created_at=doc.get("created_at", _now()),
     )
 
@@ -180,6 +313,7 @@ def _member_card(doc: dict) -> MemberCard:
         zip_code=doc.get("zip_code"),
         about=doc.get("about"),
         photo_url=doc.get("photo_url"),
+        is_premium=bool(doc.get("is_premium", False)),
     )
 
 
@@ -260,6 +394,199 @@ async def update_profile(
         await db.users.update_one({"id": user["id"]}, {"$set": updates})
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     return _public_user(fresh)
+
+
+@api.post("/profile/photo", response_model=PublicUser)
+async def upload_profile_photo(
+    user: Annotated[dict, Depends(current_user)],
+    file: UploadFile = File(...),
+):
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_PHOTO_TYPES:
+        raise HTTPException(400, "Please choose a JPG, PNG, or WEBP photo")
+    data = await file.read()
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "That photo is too large. Please pick one under 6 MB")
+    if not data:
+        raise HTTPException(400, "The photo appears to be empty")
+    path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ALLOWED_PHOTO_TYPES[content_type]}"
+    result = await run_in_threadpool(put_object, path, data, content_type)
+    stored_path = result.get("path", path)
+    await db.photos.insert_one({
+        "path": stored_path,
+        "owner_id": user["id"],
+        "content_type": content_type,
+        "size": len(data),
+        "created_at": _now(),
+    })
+    photo_url = f"/api/files/{stored_path}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {"photo_url": photo_url}})
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return _public_user(fresh)
+
+
+@api.get("/files/{path:path}")
+async def serve_file(path: str):
+    # Profile photos are visible to every member, so reads are public but
+    # limited to objects this app recorded in its own database.
+    photo = await db.photos.find_one({"path": path}, {"_id": 0})
+    if not photo:
+        raise HTTPException(404, "Photo not found")
+    try:
+        content, content_type = await run_in_threadpool(get_object, path)
+    except requests.HTTPError:
+        raise HTTPException(404, "Photo not found")
+    return Response(
+        content=content,
+        media_type=photo.get("content_type") or content_type,
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
+
+
+# ---------- Premium (Stripe subscription) ----------
+
+async def _activate_premium(user_id: str, session: dict) -> None:
+    sub_id = session.get("subscription")
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "is_premium": True,
+            "stripe_subscription_id": sub_id,
+            "stripe_customer_id": session.get("customer"),
+            "premium_since": _now(),
+        }},
+    )
+
+
+async def _sync_session(session_id: str) -> dict:
+    session = await run_in_threadpool(stripe.checkout.Session.retrieve, session_id)
+    tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(404, "Unknown checkout session")
+    paid = session.get("payment_status") == "paid"
+    await db.payment_transactions.update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "payment_status": session.get("payment_status"),
+            "session_status": session.get("status"),
+            "updated_at": _now(),
+        }},
+    )
+    if paid and tx.get("payment_status") != "paid":
+        await _activate_premium(tx["user_id"], session)
+    return {"user_id": tx["user_id"], "paid": paid,
+            "payment_status": session.get("payment_status"), "session_status": session.get("status")}
+
+
+@api.post("/premium/checkout", response_model=CheckoutOut)
+async def premium_checkout(body: CheckoutIn, user: Annotated[dict, Depends(current_user)]):
+    if user.get("is_premium"):
+        raise HTTPException(409, "You are already a Premium member")
+    origin = body.origin_url.rstrip("/")
+    try:
+        session = await run_in_threadpool(
+            lambda: stripe.checkout.Session.create(
+                mode="subscription",
+                payment_method_types=["card"],
+                line_items=[{
+                    "price_data": {
+                        "currency": "usd",
+                        "unit_amount": PREMIUM_PRICE_CENTS,
+                        "recurring": {"interval": "month"},
+                        "product_data": {"name": "The Afterglow Premium"},
+                    },
+                    "quantity": 1,
+                }],
+                success_url=f"{origin}/premium-success?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{origin}/premium-cancel",
+                client_reference_id=user["id"],
+                metadata={"user_id": user["id"]},
+                subscription_data={"metadata": {"user_id": user["id"]}},
+            )
+        )
+    except stripe.StripeError as e:
+        logger.error("Stripe checkout failed: %s", e)
+        raise HTTPException(502, "We couldn't reach the payment provider. Please try again shortly.")
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()),
+        "session_id": session.id,
+        "user_id": user["id"],
+        "email": user["email"],
+        "amount_cents": PREMIUM_PRICE_CENTS,
+        "currency": "usd",
+        "payment_status": "initiated",
+        "session_status": session.get("status"),
+        "created_at": _now(),
+        "updated_at": _now(),
+    })
+    return CheckoutOut(url=session.url, session_id=session.id)
+
+
+@api.get("/premium/status", response_model=PremiumStatus)
+async def premium_status(
+    user: Annotated[dict, Depends(current_user)],
+    session_id: Optional[str] = None,
+):
+    payment_status = session_status = None
+    if session_id:
+        tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        if not tx or tx["user_id"] != user["id"]:
+            raise HTTPException(403, "This checkout does not belong to you")
+        try:
+            info = await _sync_session(session_id)
+            payment_status, session_status = info["payment_status"], info["session_status"]
+        except stripe.StripeError as e:
+            logger.warning("Stripe status lookup failed: %s", e)
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return PremiumStatus(
+        is_premium=bool(fresh.get("is_premium", False)),
+        payment_status=payment_status,
+        session_status=session_status,
+    )
+
+
+@api.get("/premium/confirm", response_model=PremiumStatus)
+async def premium_confirm(session_id: str):
+    """Unauthenticated confirmation used by the browser success page after
+    checkout (the browser may not hold the app session). Only trusts Stripe."""
+    try:
+        info = await _sync_session(session_id)
+    except stripe.StripeError:
+        raise HTTPException(502, "Could not confirm payment yet")
+    return PremiumStatus(is_premium=info["paid"], payment_status=info["payment_status"],
+                         session_status=info["session_status"])
+
+
+@api.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(400, "Webhook secret not configured")
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.SignatureVerificationError):
+        raise HTTPException(400, "Invalid webhook")
+    obj = event["data"]["object"]
+    if event["type"] == "checkout.session.completed":
+        try:
+            await _sync_session(obj["id"])
+        except HTTPException:
+            pass
+    elif event["type"] == "customer.subscription.deleted":
+        user_id = (obj.get("metadata") or {}).get("user_id")
+        if user_id:
+            await db.users.update_one({"id": user_id}, {"$set": {"is_premium": False}})
+    return {"received": True}
+
+
+# ---------- Daily gentle prompt ----------
+
+@api.get("/prompts/today", response_model=DailyPrompt)
+async def prompt_today(user: Annotated[dict, Depends(current_user)]):
+    today = _now().date()
+    return DailyPrompt(date=today.isoformat(),
+                       prompt=DAILY_PROMPTS[today.toordinal() % len(DAILY_PROMPTS)])
 
 
 # ---------- Discover ----------
@@ -444,9 +771,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)

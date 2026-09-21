@@ -27,12 +27,28 @@ gentle companionship. Tagline: *gentle connection in the light after loss*.
 - App name: **The Afterglow**
 - Bundle ID (iOS) / package (Android): `com.afterglow.app`
 - versionCode: 1, version: 1.0.0
-- Minimum permissions: INTERNET only (no camera / location yet).
-- Adaptive icon foreground + splash screen use brand purple background.
+- Permissions: INTERNET + photo library (via expo-image-picker plugin) for profile photos.
+- Icon / adaptive icon / splash / favicon generated from the user's Afterglow
+  lighthouse artwork (`assets/images/icon.png`, `adaptive-icon.png`,
+  `splash-image.png` (heart symbol), `app-image.png` (full art, welcome screen),
+  `hero-heart.png` (premium hero)). Brand sky colour `#2C3157`.
+
+## Iteration 2 (done)
+- **Real photos**: `POST /api/profile/photo` (multipart) → Emergent Object
+  Storage, served publicly via `GET /api/files/{path}` (only paths recorded in
+  `photos` collection). `photo_url` stored as relative `/api/files/...`;
+  frontend resolves via `photoUri()`. Permission flow in `src/photo-picker.ts`.
+- **Premium subscription ($5.99/mo)**: Stripe Checkout `mode=subscription`
+  via Emergent Stripe proxy (`STRIPE_API_KEY=sk_test_emergent`).
+  `POST /api/premium/checkout {origin_url}` → `GET /api/premium/status?session_id`
+  (auth, polls + activates) → `GET /api/premium/confirm?session_id` (unauth, for
+  browser success page). Webhook `POST /api/webhook/stripe` (needs
+  `STRIPE_WEBHOOK_SECRET`). Routes `/premium-success`, `/premium-cancel`.
+  `users.is_premium` drives badges on Profile + Discover cards.
+- **Daily gentle prompt**: `GET /api/prompts/today` (deterministic by day).
+  Shown as a card on Discover and a tap-to-fill chip in Chat.
 
 ## Deferred / next iteration
-- Stripe or RevenueCat subscription for the Premium screen (currently a
-  showcase button — no purchase path).
+- Stripe webhook secret (configure in Stripe dashboard → `STRIPE_WEBHOOK_SECRET`).
 - Video calling.
 - Push notifications (Emergent-managed).
-- Photo upload to Emergent Object Storage.

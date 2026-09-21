@@ -13,6 +13,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
 import { api } from "@/src/auth";
+import { Avatar } from "@/src/components/avatar";
 
 type Conversation = {
   conversation_id: string;
@@ -43,11 +44,7 @@ function fmtTime(iso?: string | null) {
 }
 
 function Initial({ name }: { name: string }) {
-  return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{(name || "?").charAt(0).toUpperCase()}</Text>
-    </View>
-  );
+  return <Avatar name={name} size={52} />;
 }
 
 export default function Messages() {
@@ -170,7 +167,7 @@ export default function Messages() {
                     }
                     style={[styles.convRow, i > 0 && styles.rowSep]}
                   >
-                    <Initial name={c.other_user_name} />
+                    <Avatar name={c.other_user_name} uri={c.other_user_photo} size={52} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.convName}>{c.other_user_name}</Text>
                       <Text style={styles.convLast} numberOfLines={1}>
@@ -266,19 +263,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   convTime: { color: colors.muted, fontFamily: fonts.text, fontSize: 13 },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.brandTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    color: colors.onBrandTertiary,
-    fontFamily: fonts.displayBold,
-    fontSize: 22,
-  },
   emptyWrap: {
     alignItems: "center",
     padding: spacing.xl,

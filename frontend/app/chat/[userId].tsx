@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
 import { api, getStoredUser } from "@/src/auth";
+import { useDailyPrompt } from "@/src/daily-prompt";
 
 type Message = {
   id: string;
@@ -37,6 +38,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
+  const prompt = useDailyPrompt();
 
   const load = useCallback(async () => {
     try {
@@ -126,6 +128,17 @@ export default function Chat() {
             );
           }}
         />
+      )}
+
+      {prompt && !text.trim() && (
+        <Pressable
+          testID="chat-prompt-chip"
+          onPress={() => setText(prompt.prompt)}
+          style={({ pressed }) => [styles.promptChip, pressed && { opacity: 0.85 }]}
+        >
+          <Text style={styles.promptChipLabel}>✨ Today's gentle prompt</Text>
+          <Text style={styles.promptChipText} numberOfLines={2}>{prompt.prompt}</Text>
+        </Pressable>
       )}
 
       <View
@@ -219,6 +232,30 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.divider,
     backgroundColor: colors.surface,
+  },
+  promptChip: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.brandSecondary,
+    minHeight: 56,
+  },
+  promptChipLabel: {
+    color: colors.onBrandTertiary,
+    fontFamily: fonts.textBold,
+    fontSize: 13,
+    letterSpacing: 1,
+    opacity: 0.85,
+  },
+  promptChipText: {
+    color: colors.onBrandTertiary,
+    fontFamily: fonts.text,
+    fontSize: 16,
+    lineHeight: 22,
+    marginTop: 4,
   },
   input: {
     flex: 1,

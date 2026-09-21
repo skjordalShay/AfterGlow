@@ -15,7 +15,8 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
-import { api, getStoredUser, User } from "@/src/auth";
+import { api, getStoredUser, User, photoUri } from "@/src/auth";
+import { useDailyPrompt } from "@/src/daily-prompt";
 
 type Member = {
   id: string;
@@ -23,6 +24,7 @@ type Member = {
   zip_code?: string | null;
   about?: string | null;
   photo_url?: string | null;
+  is_premium?: boolean;
 };
 
 const FALLBACK_PHOTOS = [
@@ -39,6 +41,7 @@ export default function Discover() {
   const [refreshing, setRefreshing] = useState(false);
   const [me, setMe] = useState<User | null>(null);
   const [waved, setWaved] = useState<Record<string, boolean>>({});
+  const prompt = useDailyPrompt();
 
   const load = useCallback(async () => {
     try {
@@ -114,14 +117,32 @@ export default function Discover() {
             />
           }
         >
+          {prompt && (
+            <View style={styles.promptCard} testID="daily-prompt-card">
+              <Text style={styles.promptEyebrow}>TONIGHT'S GENTLE PROMPT</Text>
+              <Text style={styles.promptText}>{prompt.prompt}</Text>
+              <Pressable
+                testID="daily-prompt-share"
+                onPress={() => router.push("/(tabs)/messages")}
+                style={({ pressed }) => [styles.promptBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.promptBtnText}>Share it with someone</Text>
+              </Pressable>
+            </View>
+          )}
           {members.map((m, i) => (
             <View key={m.id} style={styles.card} testID={`member-card-${m.id}`}>
               <Image
-                source={{ uri: m.photo_url || FALLBACK_PHOTOS[i % FALLBACK_PHOTOS.length] }}
+                source={{ uri: photoUri(m.photo_url) || FALLBACK_PHOTOS[i % FALLBACK_PHOTOS.length] }}
                 style={styles.cardImage}
                 contentFit="cover"
                 transition={200}
               />
+              {m.is_premium && (
+                <View style={styles.cardBadge}>
+                  <Text style={styles.cardBadgeText}>✨ Premium</Text>
+                </View>
+              )}
               <LinearGradient
                 colors={["rgba(34,28,43,0)", "rgba(34,28,43,0.85)"]}
                 locations={[0.35, 1]}
@@ -233,6 +254,48 @@ const styles = StyleSheet.create({
   },
   emptyBtnText: { color: colors.onBrandPrimary, fontFamily: fonts.textBold, fontSize: 17 },
   list: { paddingHorizontal: spacing.lg, gap: spacing.lg, paddingTop: spacing.md },
+  promptCard: {
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.brandSecondary,
+    gap: spacing.sm,
+  },
+  promptEyebrow: {
+    color: colors.onBrandTertiary,
+    fontFamily: fonts.textBold,
+    fontSize: 12,
+    letterSpacing: 2.5,
+    opacity: 0.8,
+  },
+  promptText: {
+    color: colors.onBrandTertiary,
+    fontFamily: fonts.display,
+    fontSize: 24,
+    lineHeight: 32,
+  },
+  promptBtn: {
+    alignSelf: "flex-start",
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+  },
+  promptBtnText: { color: colors.onBrandPrimary, fontFamily: fonts.textBold, fontSize: 16 },
+  cardBadge: {
+    position: "absolute",
+    top: spacing.md,
+    right: spacing.md,
+    backgroundColor: colors.brandSecondary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  cardBadgeText: { color: colors.onBrandSecondary, fontFamily: fonts.textBold, fontSize: 14 },
   card: {
     borderRadius: radius.lg,
     overflow: "hidden",

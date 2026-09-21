@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, Pressable, ImageBackground } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -12,32 +13,25 @@ export default function Welcome() {
 
   return (
     <View style={styles.root} testID="welcome-screen">
-      <ImageBackground
-        source={{
-          uri: "https://images.unsplash.com/photo-1604079681864-c6fbd7eb109c?auto=compress&cs=srgb&fm=jpg&w=1200",
-        }}
+      <Image
+        source={require("../assets/images/app-image.png")}
         style={StyleSheet.absoluteFill}
-        resizeMode="cover"
-      >
-        <LinearGradient
-          colors={["rgba(34,28,43,0.35)", "rgba(34,28,43,0.85)", "rgba(34,28,43,0.98)"]}
-          locations={[0, 0.55, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </ImageBackground>
+        contentFit="contain"
+        contentPosition="top"
+      />
+      <LinearGradient
+        colors={["rgba(34,28,43,0)", "rgba(34,28,43,0.15)", "rgba(34,28,43,0.92)"]}
+        locations={[0, 0.5, 1]}
+        style={StyleSheet.absoluteFill}
+      />
 
-      <View style={[styles.content, { paddingTop: insets.top + spacing.xxl }]}>
-        <Text style={styles.eyebrow}>THE</Text>
-        <Text style={styles.title}>Afterglow</Text>
-        <Text style={styles.tagline}>gentle connection in the light after loss</Text>
+      <View style={[styles.content, { paddingTop: insets.top + spacing.xxl }]} />
 
+      <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + spacing.lg }]}>
         <Text style={styles.body}>
           A quiet place for widowed and bereaved seniors to find companionship,
           conversation, and small comforts — at your own pace.
         </Text>
-      </View>
-
-      <View style={[styles.ctaWrap, { paddingBottom: insets.bottom + spacing.lg }]}>
         <Pressable
           testID="welcome-signup-button"
           onPress={() => {
@@ -62,35 +56,17 @@ export default function Welcome() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surfaceInverse },
+  // Artwork sky colour — must match the PNG in every theme.
+  root: { flex: 1, backgroundColor: "#2C3157" },
   content: { flex: 1, paddingHorizontal: spacing.lg, justifyContent: "flex-start" },
-  eyebrow: {
-    color: colors.brandSecondary,
-    fontFamily: fonts.textMedium,
-    fontSize: 14,
-    letterSpacing: 4,
-    marginBottom: spacing.xs,
-  },
-  title: {
-    color: colors.onSurfaceInverse,
-    fontFamily: fonts.displayBold,
-    fontSize: 56,
-    lineHeight: 60,
-    marginBottom: spacing.md,
-  },
-  tagline: {
-    color: colors.brandSecondary,
-    fontFamily: fonts.display,
-    fontSize: 20,
-    marginBottom: spacing.xl,
-    fontStyle: "italic",
-  },
   body: {
     color: colors.onSurfaceInverse,
     fontFamily: fonts.text,
     fontSize: 18,
     lineHeight: 28,
-    opacity: 0.92,
+    opacity: 0.94,
+    textAlign: "center",
+    marginBottom: spacing.md,
   },
   ctaWrap: {
     paddingHorizontal: spacing.lg,

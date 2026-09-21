@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,11 +11,13 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
-import { api, getStoredUser, signOut, User, fetchMe } from "@/src/auth";
+import { api, getStoredUser, signOut, User, fetchMe, uploadProfilePhoto } from "@/src/auth";
+import { Avatar } from "@/src/components/avatar";
+import { pickProfilePhoto } from "@/src/photo-picker";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
@@ -27,6 +29,14 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMe().then((u) => u && setUser(u));
+    }, []),
+  );
 
   useEffect(() => {
     (async () => {
@@ -39,6 +49,21 @@ export default function Profile() {
       }
     })();
   }, []);
+
+  async function changePhoto() {
+    setPhotoError(null);
+    try {
+      const picked = await pickProfilePhoto();
+      if (!picked) return;
+      setUploading(true);
+      const updated = await uploadProfilePhoto(picked.uri, picked.fileName, picked.mimeType);
+      setUser(updated);
+    } catch (e: any) {
+      setPhotoError(e?.message ?? "Could not upload photo");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -94,8 +119,36 @@ export default function Profile() {
           />
           <View style={[styles.bannerContent, { paddingTop: insets.top + spacing.lg }]}>
             <Text style={styles.eyebrow}>MY PROFILE</Text>
-            <Text style={styles.name}>{user.first_name}</Text>
-            <Text style={styles.email}>{user.email}</Text>
+            <View style={styles.identityRow}>
+              <View>
+                <Avatar name={user.first_name} uri={user.photo_url} size={96} testID="profile-avatar" />
+                {uploading && (
+                  <View style={styles.avatarOverlay}>
+                    <ActivityIndicator color={colors.onSurfaceInverse} />
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{user.first_name}</Text>
+                <Text style={styles.email}>{user.email}</Text>
+                {user.is_premium && (
+                  <View style={styles.premiumBadge} testID="profile-premium-badge">
+                    <Text style={styles.premiumBadgeText}>✨ Premium member</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <Pressable
+              testID="profile-photo-button"
+              onPress={changePhoto}
+              disabled={uploading}
+              style={({ pressed }) => [styles.photoBtn, (pressed || uploading) && { opacity: 0.8 }]}
+            >
+              <Text style={styles.photoBtnText}>
+                {uploading ? "Uploading photo..." : user.photo_url ? "Change photo" : "Add a profile photo"}
+              </Text>
+            </Pressable>
+            {photoError && <Text style={styles.photoError}>{photoError}</Text>}
           </View>
         </View>
 
@@ -154,18 +207,27 @@ export default function Profile() {
             </Text>
           </Pressable>
 
-          <Pressable
-            testID="profile-premium-button"
-            onPress={() => router.push("/premium")}
-            style={({ pressed }) => [styles.premiumBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={styles.premiumBtnText}>
-              ✨  Unlock Premium
-            </Text>
-            <Text style={styles.premiumBtnSub}>
-              Unlimited waves, see who viewed you, and more.
-            </Text>
-          </Pressable>
+          {user.is_premium ? (
+            <View style={styles.premiumBtn} testID="profile-premium-active">
+              <Text style={styles.premiumBtnText}>✨  Premium is active</Text>
+              <Text style={styles.premiumBtnSub}>
+                Thank you for supporting a calm, ad-free community.
+              </Text>
+            </View>
+          ) : (
+            <Pressable
+              testID="profile-premium-button"
+              onPress={() => router.push("/premium")}
+              style={({ pressed }) => [styles.premiumBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.premiumBtnText}>
+                ✨  Unlock Premium
+              </Text>
+              <Text style={styles.premiumBtnSub}>
+                Unlimited waves, see who viewed you, and more.
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             testID="profile-signout-button"
@@ -196,7 +258,58 @@ const styles = StyleSheet.create({
   name: {
     color: colors.onSurfaceInverse,
     fontFamily: fonts.displayBold,
-    fontSize: 40,
+    fontSize: 34,
+  },
+  identityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  avatarOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: "rgba(34,28,43,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  premiumBadge: {
+    alignSelf: "flex-start",
+    marginTop: spacing.xs,
+    backgroundColor: colors.brandSecondary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  premiumBadgeText: {
+    color: colors.onBrandSecondary,
+    fontFamily: fonts.textBold,
+    fontSize: 14,
+  },
+  photoBtn: {
+    marginTop: spacing.md,
+    alignSelf: "flex-start",
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.onSurfaceInverse,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoBtnText: {
+    color: colors.onSurfaceInverse,
+    fontFamily: fonts.textBold,
+    fontSize: 16,
+  },
+  photoError: {
+    color: colors.brandSecondary,
+    fontFamily: fonts.textMedium,
+    fontSize: 15,
     marginTop: spacing.xs,
   },
   email: {
