@@ -11,12 +11,22 @@ import {
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
 import { api, getStoredUser, User, photoUri } from "@/src/auth";
 import { useDailyPrompt } from "@/src/daily-prompt";
+import { startsInText } from "@/src/gathering-time";
+
+type UpcomingGathering = {
+  id: string;
+  title: string;
+  host: string;
+  category: string;
+  starts_at: string;
+  duration_minutes: number;
+};
 
 type Member = {
   id: string;
@@ -42,6 +52,13 @@ export default function Discover() {
   const [me, setMe] = useState<User | null>(null);
   const [waved, setWaved] = useState<Record<string, boolean>>({});
   const prompt = useDailyPrompt();
+  const [upcoming, setUpcoming] = useState<UpcomingGathering[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      api<UpcomingGathering[]>("/gatherings/upcoming").then(setUpcoming).catch(() => {});
+    }, []),
+  );
 
   const load = useCallback(async () => {
     try {
@@ -117,6 +134,28 @@ export default function Discover() {
             />
           }
         >
+          {upcoming.length > 0 && (
+            <Pressable
+              testID="upcoming-gathering-card"
+              onPress={() => router.push("/(tabs)/gathering")}
+              style={({ pressed }) => [styles.upcomingCard, pressed && { opacity: 0.9 }]}
+            >
+              <Text style={styles.upcomingEyebrow}>
+                {upcoming.length === 1 ? "YOUR NEXT GATHERING" : `YOUR NEXT ${upcoming.length} GATHERINGS`}
+              </Text>
+              {upcoming.map((g, i) => (
+                <View key={g.id} style={[styles.upcomingRow, i > 0 && styles.upcomingSep]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.upcomingTitle}>{g.title}</Text>
+                    <Text style={styles.upcomingHost}>with {g.host}</Text>
+                  </View>
+                  <Text style={styles.upcomingWhen} testID={`upcoming-when-${g.id}`}>
+                    {startsInText(g.starts_at, g.duration_minutes)}
+                  </Text>
+                </View>
+              ))}
+            </Pressable>
+          )}
           {prompt && (
             <View style={styles.promptCard} testID="daily-prompt-card">
               <Text style={styles.promptEyebrow}>TONIGHT'S GENTLE PROMPT</Text>
@@ -254,6 +293,38 @@ const styles = StyleSheet.create({
   },
   emptyBtnText: { color: colors.onBrandPrimary, fontFamily: fonts.textBold, fontSize: 17 },
   list: { paddingHorizontal: spacing.lg, gap: spacing.lg, paddingTop: spacing.md },
+  upcomingCard: {
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  upcomingEyebrow: {
+    color: colors.brandSecondary,
+    fontFamily: fonts.textBold,
+    fontSize: 12,
+    letterSpacing: 2.5,
+  },
+  upcomingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: 56,
+  },
+  upcomingSep: { borderTopWidth: 1, borderTopColor: "rgba(253,251,247,0.18)", paddingTop: spacing.sm },
+  upcomingTitle: { color: colors.onBrandPrimary, fontFamily: fonts.displayBold, fontSize: 20, lineHeight: 26 },
+  upcomingHost: { color: colors.onBrandPrimary, fontFamily: fonts.text, fontSize: 15, opacity: 0.8, marginTop: 2 },
+  upcomingWhen: {
+    color: colors.onBrandSecondary,
+    backgroundColor: colors.brandSecondary,
+    fontFamily: fonts.textBold,
+    fontSize: 14,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    textAlign: "center",
+    maxWidth: 140,
+  },
   promptCard: {
     backgroundColor: colors.brandTertiary,
     borderRadius: radius.lg,

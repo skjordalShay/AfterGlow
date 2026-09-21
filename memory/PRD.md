@@ -48,7 +48,22 @@ gentle companionship. Tagline: *gentle connection in the light after loss*.
 - **Daily gentle prompt**: `GET /api/prompts/today` (deterministic by day).
   Shown as a card on Discover and a tap-to-fill chip in Chat.
 
+## Iteration 3 (done)
+- **Gathering reminders**: RSVPs persist (`rsvps` collection). `POST/DELETE
+  /api/gatherings/{id}/rsvp`, `GET /api/gatherings/upcoming` (RSVP'd, not yet
+  ended, max 3). Gatherings roll forward weekly once they end. Discover shows a
+  "Your next gathering" card with "Starts in 2 hours" / "Happening now" /
+  "Tomorrow at 3:00 PM" wording (`src/gathering-time.ts`).
+- **Live Stripe keys**: no code change needed — set in `backend/.env`:
+  `STRIPE_API_KEY=sk_live_...` (or your own `sk_test_...`) and
+  `STRIPE_WEBHOOK_SECRET=whsec_...`. Webhook endpoint:
+  `https://<deployed-domain>/api/webhook/stripe`; events:
+  `checkout.session.completed`, `customer.subscription.updated`,
+  `customer.subscription.deleted`, `invoice.payment_failed`. Subscription
+  updated/deleted now syncs `is_premium` automatically. The shared
+  `sk_test_emergent` key routes through the Emergent proxy; real keys go
+  straight to Stripe.
+
 ## Deferred / next iteration
-- Stripe webhook secret (configure in Stripe dashboard → `STRIPE_WEBHOOK_SECRET`).
 - Video calling.
 - Push notifications (Emergent-managed).

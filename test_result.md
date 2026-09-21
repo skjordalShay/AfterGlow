@@ -106,3 +106,8 @@ Implemented: (1) profile photo upload via Emergent Object Storage (`POST /api/pr
 (2) Stripe $5.99/mo subscription (`POST /api/premium/checkout`, `GET /api/premium/status`, `GET /api/premium/confirm`,
 routes `/premium`, `/premium-success`, `/premium-cancel`), (3) daily prompt (`GET /api/prompts/today`, Discover card +
 chat chip), (4) store icon/splash/welcome artwork. All 4 need testing. Credentials in /app/memory/test_credentials.md.
+
+## Iteration 3 — main agent notes
+Gathering reminders: persistent RSVPs (POST/DELETE /api/gatherings/{id}/rsvp), GET /api/gatherings/upcoming, Discover
+"Your next gathering" card with relative "Starts in N hours" text. Stripe webhook now syncs subscription.updated/deleted.
+Self-tested via API + screenshots; 31 existing pytest tests still pass.

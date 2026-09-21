@@ -96,6 +96,8 @@ STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 PREMIUM_PRICE_CENTS = 599
 stripe.api_key = STRIPE_API_KEY
+# The shared Emergent test key is routed through the Emergent proxy; a real
+# sk_live_/sk_test_ key from your own Stripe account talks to Stripe directly.
 if "sk_test_emergent" in STRIPE_API_KEY:
     stripe.api_base = STORAGE_BASE.rstrip("/") + "/stripe"
 
@@ -144,9 +146,11 @@ async def lifespan(app: FastAPI):
     await db.messages.create_index([("conversation_id", ASCENDING), ("created_at", ASCENDING)])
     await db.photos.create_index([("path", ASCENDING)], unique=True)
     await db.payment_transactions.create_index([("session_id", ASCENDING)], unique=True)
+    await db.rsvps.create_index([("user_id", ASCENDING), ("gathering_id", ASCENDING)], unique=True)
     # Seed default gatherings if none exist
     if await db.gatherings.count_documents({}) == 0:
         await db.gatherings.insert_many(_default_gatherings())
+    await _roll_gatherings_forward()
     try:
         await run_in_threadpool(init_storage)
     except Exception as e:  # storage is optional at boot; uploads re-init lazily
@@ -272,6 +276,8 @@ class Gathering(BaseModel):
     duration_minutes: int
     image_url: Optional[str] = None
     description: Optional[str] = None
+    going: bool = False
+    attendee_count: int = 0
 
 
 # ---------- Helpers ----------
@@ -568,15 +574,25 @@ async def stripe_webhook(request: Request):
     except (ValueError, stripe.SignatureVerificationError):
         raise HTTPException(400, "Invalid webhook")
     obj = event["data"]["object"]
-    if event["type"] == "checkout.session.completed":
+    etype = event["type"]
+    if etype == "checkout.session.completed":
         try:
             await _sync_session(obj["id"])
         except HTTPException:
             pass
-    elif event["type"] == "customer.subscription.deleted":
+    elif etype in {"customer.subscription.updated", "customer.subscription.deleted"}:
+        # Authoritative state: keep Premium only while Stripe says the
+        # subscription is active (covers cancellations, failed renewals, refunds).
         user_id = (obj.get("metadata") or {}).get("user_id")
         if user_id:
-            await db.users.update_one({"id": user_id}, {"$set": {"is_premium": False}})
+            active = etype != "customer.subscription.deleted" and obj.get("status") in {"active", "trialing"}
+            await db.users.update_one(
+                {"id": user_id},
+                {"$set": {"is_premium": active, "stripe_status": obj.get("status"),
+                          "stripe_subscription_id": obj.get("id")}},
+            )
+    elif etype == "invoice.payment_failed":
+        logger.warning("Stripe invoice payment failed for customer %s", obj.get("customer"))
     return {"received": True}
 
 
@@ -705,11 +721,63 @@ async def send_message(
 
 # ---------- Gatherings ----------
 
+async def _roll_gatherings_forward() -> None:
+    """Gatherings are weekly classes: once one has ended, move it to the same
+    slot next week so the schedule never goes stale."""
+    now = _now()
+    async for g in db.gatherings.find({}, {"_id": 0, "id": 1, "starts_at": 1, "duration_minutes": 1}):
+        starts = g["starts_at"]
+        if starts.tzinfo is None:
+            starts = starts.replace(tzinfo=timezone.utc)
+        ends = starts + timedelta(minutes=g.get("duration_minutes", 60))
+        if ends < now:
+            weeks = ((now - ends).days // 7) + 1
+            await db.gatherings.update_one({"id": g["id"]}, {"$set": {"starts_at": starts + timedelta(weeks=weeks)}})
+
+
+async def _gatherings_for(user_id: str, only_going: bool = False) -> List[Gathering]:
+    my_ids = {r["gathering_id"] async for r in db.rsvps.find({"user_id": user_id}, {"_id": 0, "gathering_id": 1})}
+    query = {"id": {"$in": list(my_ids)}} if only_going else {}
+    docs = await db.gatherings.find(query, {"_id": 0}).sort("starts_at", 1).to_list(length=200)
+    counts = {c["_id"]: c["n"] async for c in db.rsvps.aggregate([{"$group": {"_id": "$gathering_id", "n": {"$sum": 1}}}])}
+    for d in docs:  # Mongo drops tzinfo — always hand the app explicit UTC
+        if d["starts_at"].tzinfo is None:
+            d["starts_at"] = d["starts_at"].replace(tzinfo=timezone.utc)
+    return [Gathering(**d, going=d["id"] in my_ids, attendee_count=counts.get(d["id"], 0)) for d in docs]
+
+
 @api.get("/gatherings", response_model=List[Gathering])
 async def list_gatherings(user: Annotated[dict, Depends(current_user)]):
-    cursor = db.gatherings.find({}, {"_id": 0}).sort("starts_at", 1)
-    docs = await cursor.to_list(length=200)
-    return [Gathering(**d) for d in docs]
+    await _roll_gatherings_forward()
+    return await _gatherings_for(user["id"])
+
+
+@api.get("/gatherings/upcoming", response_model=List[Gathering])
+async def upcoming_gatherings(user: Annotated[dict, Depends(current_user)], limit: int = 3):
+    """Gatherings this member has RSVP'd to that haven't ended yet."""
+    await _roll_gatherings_forward()
+    items = await _gatherings_for(user["id"], only_going=True)
+    return items[:limit]
+
+
+@api.post("/gatherings/{gathering_id}/rsvp", response_model=Gathering)
+async def rsvp_gathering(gathering_id: str, user: Annotated[dict, Depends(current_user)]):
+    if not await db.gatherings.find_one({"id": gathering_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(404, "Gathering not found")
+    await db.rsvps.update_one(
+        {"user_id": user["id"], "gathering_id": gathering_id},
+        {"$setOnInsert": {"id": str(uuid.uuid4()), "created_at": _now()}},
+        upsert=True,
+    )
+    return next(g for g in await _gatherings_for(user["id"]) if g.id == gathering_id)
+
+
+@api.delete("/gatherings/{gathering_id}/rsvp", response_model=Gathering)
+async def cancel_rsvp(gathering_id: str, user: Annotated[dict, Depends(current_user)]):
+    if not await db.gatherings.find_one({"id": gathering_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(404, "Gathering not found")
+    await db.rsvps.delete_one({"user_id": user["id"], "gathering_id": gathering_id})
+    return next(g for g in await _gatherings_for(user["id"]) if g.id == gathering_id)
 
 
 def _default_gatherings() -> list:

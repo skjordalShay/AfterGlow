@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
 import { api } from "@/src/auth";
@@ -23,6 +24,8 @@ type Gathering = {
   duration_minutes: number;
   image_url?: string | null;
   description?: string | null;
+  going: boolean;
+  attendee_count: number;
 };
 
 const CATEGORIES = ["All", "Wellness", "Exercise", "Arts", "Social", "History"];
@@ -41,7 +44,7 @@ export default function GatheringScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [category, setCategory] = useState("All");
-  const [rsvpd, setRsvpd] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +59,22 @@ export default function GatheringScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function toggleRsvp(g: Gathering) {
+    if (busyId) return;
+    setBusyId(g.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      const updated = await api<Gathering>(`/gatherings/${g.id}/rsvp`, {
+        method: g.going ? "DELETE" : "POST",
+      });
+      setItems((prev) => prev.map((x) => (x.id === g.id ? updated : x)));
+    } catch {
+      /* leave state unchanged */
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const filtered =
     category === "All" ? items : items.filter((i) => i.category === category);
@@ -125,7 +144,7 @@ export default function GatheringScreen() {
         >
           {filtered.map((g) => {
             const d = formatDate(g.starts_at);
-            const done = !!rsvpd[g.id];
+            const done = g.going;
             return (
               <View key={g.id} style={styles.card} testID={`gathering-card-${g.id}`}>
                 {g.image_url ? (
@@ -153,17 +172,25 @@ export default function GatheringScreen() {
                     ) : null}
                     <Pressable
                       testID={`rsvp-button-${g.id}`}
-                      onPress={() => setRsvpd((s) => ({ ...s, [g.id]: !done }))}
+                      onPress={() => toggleRsvp(g)}
+                      disabled={busyId === g.id}
                       style={({ pressed }) => [
                         styles.rsvpBtn,
                         done && styles.rsvpDone,
-                        pressed && { opacity: 0.85 },
+                        (pressed || busyId === g.id) && { opacity: 0.85 },
                       ]}
                     >
                       <Text style={[styles.rsvpBtnText, done && { color: colors.onBrandPrimary }]}>
                         {done ? "You're going ✓" : "RSVP"}
                       </Text>
                     </Pressable>
+                    {g.attendee_count > 0 ? (
+                      <Text style={styles.attendees}>
+                        {g.attendee_count === 1
+                          ? done ? "You're the first to join" : "1 member going"
+                          : `${g.attendee_count} members going`}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
               </View>
@@ -303,6 +330,7 @@ const styles = StyleSheet.create({
   },
   rsvpDone: { backgroundColor: colors.brandPrimary },
   rsvpBtnText: { color: colors.onBrandSecondary, fontFamily: fonts.textBold, fontSize: 15 },
+  attendees: { color: colors.muted, fontFamily: fonts.text, fontSize: 14, marginTop: spacing.xs },
   emptyWrap: { padding: spacing.xl, alignItems: "center" },
   emptyTitle: {
     color: colors.onSurface,
