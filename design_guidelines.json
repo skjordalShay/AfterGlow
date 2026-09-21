@@ -1,0 +1,176 @@
+{
+  "app_name": "The Afterglow",
+  "personality": "8 Hand-Drawn / Journal LIGHT with 3 Editorial structure",
+  "personality_one_liner": "A gentle, respectful, and comforting space anchored by elegant typography and warm sunset tones, designed for cognitive ease.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#1A1525",
+    "surfaceSecondary": "#F4EFEA",
+    "onSurfaceSecondary": "#2D2438",
+    "surfaceTertiary": "#EAE1D8",
+    "onSurfaceTertiary": "#3E324A",
+    "surfaceInverse": "#221C2B",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#342744",
+    "brandPrimary": "#342744",
+    "onBrandPrimary": "#FDFBF7",
+    "brandSecondary": "#D49A3E",
+    "onBrandSecondary": "#1A1525",
+    "brandTertiary": "#EADFCD",
+    "onBrandTertiary": "#342744",
+    "success": "#375945",
+    "onSuccess": "#FDFBF7",
+    "warning": "#B57A22",
+    "onWarning": "#FDFBF7",
+    "error": "#8C3B3B",
+    "onError": "#FDFBF7",
+    "info": "#4A5D73",
+    "onInfo": "#FDFBF7",
+    "border": "#EAE1D8",
+    "borderStrong": "#C8B8A6",
+    "divider": "#EAE1D8",
+    "muted": "#5C5268",
+    "onBrand": "#FDFBF7"
+  },
+  "typography": {
+    "displayFontFamily": "Playfair Display",
+    "textFontFamily": "DM Sans",
+    "scale": {
+      "sm": 14,
+      "base": 18,
+      "lg": 22,
+      "xl": 28,
+      "2xl": 36
+    }
+  },
+  "spacing": {
+    "rule": "Generous and forgiving. Large touch targets are mandatory (minimum 52pt height for any interactive element). Use 'lg' or 'xl' padding between sections to avoid cognitive overload.",
+    "xs": 8,
+    "sm": 12,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "2xl": 48,
+    "3xl": 64
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Use solid surfaceSecondary or subtle tinted backgrounds instead of glass for better cognitive accessibility and contrast."
+    ],
+    "dont's": [
+      "No blur or glassmorphism, as it can cause visual confusion for seniors or users with visual impairments."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "solid surfaceSecondary",
+      "android": "solid surfaceSecondary",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "none",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Onboarding",
+      "purpose": "A warm, comforting welcome that gently introduces the app's purpose without overwhelming forms.",
+      "states": {
+        "loading": "A soft sunset-colored fade loop.",
+        "empty": "N/A",
+        "error": "Gentle prompt: 'We couldn't load this right now. Tap to try again.'"
+      },
+      "layout": "Full-bleed imagery of the sunset ocean/meadow behind a tall 70% opacity gradient scrim (transparent to surfaceInverse). Large Playfair Display headings. Simple, high-contrast 'Continue' button (min 56pt) sticky at the bottom."
+    },
+    {
+      "name": "Home / Discover",
+      "purpose": "Browse nearby members and view community activity gently, without swiping mechanics.",
+      "states": {
+        "loading": "Skeleton cards with soft pulsing opacity in surfaceSecondary.",
+        "empty": "Illustration of wildflowers with the text: 'The community is quiet nearby. Check back soon or join a Gathering.'",
+        "error": "Gentle error message with a prominent 'Retry' button."
+      },
+      "layout": "Vertical scrolling list of Member Cards. Each card features a clear, large photo with a gradient-to-dark scrim, large readable text (minimum 18pt), and a distinct 'Wave' or 'Send Heart' button. No complex Tinder-like swipe gestures; just vertical scrolling with explicit tap actions. Generous spacing (lg: 24pt) between cards."
+    },
+    {
+      "name": "Profile",
+      "purpose": "A respectful space to share 'About my journey' with clear scaffolding prompts.",
+      "states": {
+        "loading": "Skeleton UI for profile details.",
+        "empty": "Prompt: 'Share a bit about your journey to help others connect with you.'",
+        "error": "Error message: 'Unable to load profile.'"
+      },
+      "layout": "Cover banner at the top using the abstract sunset gradient. Profile photo overlaps the banner. Large serif name heading. Section titles in serif, body text in sans. 'Edit' actions use clear text buttons instead of just icons."
+    },
+    {
+      "name": "The Gathering",
+      "purpose": "Class schedule and group activities feed to foster community.",
+      "states": {
+        "loading": "List of skeleton event rows.",
+        "empty": "Illustration of a lighthouse with 'No upcoming gatherings in your area. Check online classes!'",
+        "error": "Error fetching gatherings."
+      },
+      "layout": "List layout. Each list item uses a brandTertiary tinted container on the left for the date/time, next to the event title. Large tap targets for 'Join' or 'RSVP'. Sticky segmented control (if needed) for 'Upcoming' vs 'My Classes' using solid surfaces."
+    },
+    {
+      "name": "Messages",
+      "purpose": "Simple, high-contrast chat list for 'Waves' and ongoing conversations.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "Soft icon and 'Your conversations will appear here. Say hello to someone nearby.'",
+        "error": "Failed to load messages."
+      },
+      "layout": "Standard vertical list with 80pt tall rows. Large avatars. Unread indicator uses the brandSecondary (Gold) dot. Text is large (18pt) and truncates gracefully."
+    },
+    {
+      "name": "Premium",
+      "purpose": "Clear, honest subscription screen highlighting the value of supporting the community.",
+      "states": {
+        "loading": "Spinner in the center.",
+        "empty": "N/A",
+        "error": "Unable to connect to the store."
+      },
+      "layout": "Scrollable view with a hero image (senior couple). Benefits listed with Phosphor check icons inside brandTertiary circles. A large, sticky 'Subscribe for $5.99/mo' CTA at the bottom."
+    }
+  ],
+  "images": {
+    "hero_senior_couple": {
+      "url": "https://images.pexels.com/photos/10260353/pexels-photo-10260353.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "An elderly couple holding hands warmly in a sunlit field"
+    },
+    "hero_lighthouse_wildflowers": {
+      "url": "https://images.pexels.com/photos/7833703/pexels-photo-7833703.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Scenic view of a lighthouse surrounded by yellow wildflowers"
+    },
+    "abstract_sunset_bg": {
+      "url": "https://images.unsplash.com/photo-1604079681864-c6fbd7eb109c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwyfHx3YXJtJTIwc3Vuc2V0JTIwYWJzdHJhY3QlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4OTgwODkyN3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Warm abstract sunset gradient shifting from red to orange"
+    }
+  },
+  "haptics": {
+    "primary_button": "medium",
+    "tab_press": "light",
+    "send_wave_heart": "success",
+    "error_state": "error"
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the 17-20pt body text rule for seniors. The typography scale base is set to 18.",
+    "Touch targets MUST be a minimum of 52pt (56pt for primary buttons). Use hitSlop generously if visual elements are smaller.",
+    "Do NOT use glassmorphism or blur effects. These reduce cognitive ease and readability for seniors. Rely on solid 'surfaceSecondary' and 'brandTertiary' for elevation and grouping.",
+    "Implement the 'gradient-to-dark' scrim behind any text overlaid on images (e.g., Home screen member cards, Onboarding hero images). Bottom stop opacity must be at least 70% of surfaceInverse.",
+    "Avoid Tinder-style swipe gestures. Use explicit vertical scrolling and large tap buttons for interactions.",
+    "The primary action buttons must be sticky at the bottom with a solid background container (not transparent or blurred) to prevent scrolling content from colliding with the label."
+  ]
+}
